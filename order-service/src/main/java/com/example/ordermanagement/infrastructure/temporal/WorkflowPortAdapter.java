@@ -1,0 +1,145 @@
+package com.example.ordermanagement.infrastructure.temporal;
+
+import com.example.ordermanagement.domain.port.outbound.WorkflowPort;
+import com.example.ordermanagement.domain.valueobject.OrderId;
+import com.example.ordermanagement.infrastructure.temporal.workflow.OrderFulfillmentWorkflow;
+import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowExecutionAlreadyStarted;
+import io.temporal.client.WorkflowOptions;
+import io.temporal.serviceclient.WorkflowServiceStubs;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+
+/**
+ * Infrastructure Adapter: WorkflowPortAdapter
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * RESPONSIBILITY
+ * ═══════════════════════════════════════════════════════════════════
+ * Implements the WorkflowPort interface using Temporal's Java SDK.
+ * This is where Spring Boot meets Temporal.
+ *
+ * The application layer calls WorkflowPort (the interface).
+ * This adapter translates those calls into Temporal SDK operations.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * TEMPORAL CONCEPTS USED HERE
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * WorkflowClient: The entry point to Temporal from application code.
+ *   - Creates workflow stubs for sending signals and queries
+ *   - Starts new workflow executions
+ *
+ * WorkflowOptions: Configuration for workflow execution
+ *   - workflowId: deterministic ID derived from business ID
+ *   - taskQueue: which worker pool handles this workflow
+ *   - executionTimeout: maximum time the workflow can run
+ *   - runTimeout: maximum time for a single run (after which Temporal continues-as-new)
+ *
+ * WorkflowExecutionAlreadyStarted: Temporal's idempotency mechanism.
+ *   If we try to start a workflow with the same workflowId, Temporal
+ *   returns this exception instead of creating a duplicate.
+ *   We handle this gracefully — it means we've already started it.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * TEMPORAL QUERY EXPLAINED
+ * ═══════════════════════════════════════════════════════════════════
+ * Queries are SYNCHRONOUS reads of workflow in-memory state.
+ * The Temporal server routes the query to the worker executing the workflow.
+ * The worker calls the @QueryMethod on the workflow instance and returns the result.
+ * No DB queries, no replay — just reading current workflow local variables.
+ * This makes queries extremely fast (sub-millisecond typically).
+ */
+@Component
+public class WorkflowPortAdapter implements WorkflowPort {
+
+    public static final String TASK_QUEUE = "ORDER_FULFILLMENT_QUEUE";
+
+    private final WorkflowClient workflowClient;
+
+    @Value("${simulation.step-delay-ms:0}")
+    private long stepDelayMs;
+
+    public WorkflowPortAdapter(WorkflowClient workflowClient) {
+        this.workflowClient = workflowClient;
+    }
+
+    @Override
+    public String startFulfillmentWorkflow(OrderId orderId, String workflowId) {
+// Logging removed
+
+        WorkflowOptions options = WorkflowOptions.newBuilder()
+                .setWorkflowId(workflowId)
+                .setTaskQueue(TASK_QUEUE)
+                // Maximum time the entire workflow can run (including waiting for signals)
+                .setWorkflowExecutionTimeout(Duration.ofHours(24))
+                // Maximum time for a single workflow run
+                .setWorkflowRunTimeout(Duration.ofHours(2))
+                .build();
+
+        OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
+                OrderFulfillmentWorkflow.class, options);
+
+        try {
+            // Start asynchronously — don't wait for workflow to complete
+            WorkflowClient.start(workflow::fulfill, orderId.toString(), stepDelayMs);
+// Logging removed
+        } catch (WorkflowExecutionAlreadyStarted e) {
+            // Idempotency: workflow already running with this ID — that's fine
+// Logging removed
+        }
+
+        return workflowId;
+    }
+
+    @Override
+    public void sendCancelSignal(String workflowId, String reason) {
+// Logging removed
+
+        OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
+                OrderFulfillmentWorkflow.class, workflowId);
+
+        try {
+            workflow.cancelOrder(reason);
+// Logging removed
+        } catch (Exception e) {
+            // Workflow may have already completed — log but don't fail
+// Logging removed
+        }
+    }
+
+    @Override
+    public void sendRetryPaymentSignal(String workflowId) {
+// Logging removed
+
+        OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
+                OrderFulfillmentWorkflow.class, workflowId);
+
+        try {
+            workflow.retryPayment();
+        } catch (Exception e) {
+// Logging removed
+        }
+    }
+
+    @Override
+    public WorkflowStatusResult queryWorkflowStatus(String workflowId) {
+        try {
+            OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
+                    OrderFulfillmentWorkflow.class, workflowId);
+
+            OrderFulfillmentWorkflow.WorkflowProgress progress = workflow.getProgress();
+            return new WorkflowStatusResult(
+                    workflowId,
+                    progress.status(),
+                    progress.currentStep(),
+                    progress.retryCount()
+            );
+        } catch (Exception e) {
+// Logging removed
+            return new WorkflowStatusResult(workflowId, "UNKNOWN", "UNKNOWN", 0);
+        }
+    }
+}
