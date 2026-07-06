@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +34,8 @@ import java.util.Map;
         Open the **Temporal UI at http://localhost:8088** to visualize all workflow executions.
         """)
 public class WorkflowController {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowController.class);
 
     private final OrderQueryUseCase queryService;
     private final WorkflowPort workflowPort;
@@ -92,7 +96,7 @@ public class WorkflowController {
             @RequestBody Map<String, String> body) {
 
         String reason = body.getOrDefault("reason", "Manual cancellation via API");
-// Logging removed
+        log.info("POST /workflows/{}/signal/cancel — reason={}", workflowId, reason);
         workflowPort.sendCancelSignal(workflowId, reason);
         return ResponseEntity.accepted().body(Map.of("message", "Cancel signal sent", "workflowId", workflowId));
     }
@@ -117,7 +121,7 @@ public class WorkflowController {
             @Parameter(description = "Temporal workflow ID", required = true)
             @PathVariable String workflowId) {
 
-// Logging removed
+        log.info("POST /workflows/{}/signal/retry-payment", workflowId);
         workflowPort.sendRetryPaymentSignal(workflowId);
         return ResponseEntity.accepted().body(Map.of("message", "RetryPayment signal sent", "workflowId", workflowId));
     }

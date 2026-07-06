@@ -11,6 +11,8 @@ import com.example.ordermanagement.domain.valueobject.OrderId;
 import com.example.ordermanagement.domain.valueobject.OrderItem;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +63,8 @@ import java.util.UUID;
 @Service
 public class OrderCommandService implements OrderCommandUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderCommandService.class);
+
     private final OrderRepository orderRepository;
     private final WorkflowPort workflowPort;
     private final MeterRegistry meterRegistry;
@@ -81,13 +85,13 @@ public class OrderCommandService implements OrderCommandUseCase {
         Timer.Sample timer = Timer.start(meterRegistry);
 
         try {
-// Logging removed
+            log.info("Creating order for customer {}", command.customerId());
 
             Order order = Order.create(command.orderId(), command.customerId(), command.shippingAddress());
             orderRepository.save(order);
 
             meterRegistry.counter("orders.created").increment();
-// Logging removed
+            log.info("Order created: {}", order.getId());
             return order.getId();
 
         } finally {
@@ -100,7 +104,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void addItem(AddItemCommand command) {
-// Logging removed
+        log.debug("Adding item {} to order {}", command.productId(), command.orderId());
 
         Order order = loadOrder(command.orderId());
 
@@ -114,7 +118,7 @@ public class OrderCommandService implements OrderCommandUseCase {
         order.addItem(item);
         orderRepository.save(order);
 
-// Logging removed
+        log.debug("Item {} added to order {}", command.productId(), command.orderId());
     }
 
     /**
@@ -138,7 +142,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void confirmOrder(ConfirmOrderCommand command) {
-// Logging removed
+        log.info("Confirming order {}", command.orderId());
 
         Order order = loadOrder(command.orderId());
 
@@ -156,7 +160,7 @@ public class OrderCommandService implements OrderCommandUseCase {
         workflowPort.startFulfillmentWorkflow(command.orderId(), workflowId);
 
         meterRegistry.counter("orders.confirmed").increment();
-// Logging removed
+        log.info("Order {} confirmed, workflow {} started", command.orderId(), workflowId);
     }
 
     /**
@@ -170,7 +174,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void cancelOrder(CancelOrderCommand command) {
-// Logging removed
+        log.info("Cancelling order {}: {}", command.orderId(), command.reason());
 
         Order order = loadOrder(command.orderId());
         String workflowId = order.getWorkflowId();
@@ -210,7 +214,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordInventoryReserved(OrderId orderId, String reservationId) {
-// Logging removed
+        log.debug("Recording InventoryReserved for order {}, reservationId={}", orderId, reservationId);
         Order order = loadOrder(orderId);
         order.reserveInventory(reservationId);
         orderRepository.save(order);
@@ -222,7 +226,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordInventoryReservationFailed(OrderId orderId, String reason) {
-// Logging removed
+        log.warn("Recording InventoryReservationFailed for order {}: {}", orderId, reason);
         Order order = loadOrder(orderId);
         order.failInventoryReservation(reason);
         orderRepository.save(order);
@@ -234,7 +238,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordInventoryReleased(OrderId orderId, String reason) {
-// Logging removed
+        log.debug("Recording InventoryReleased for order {}: {}", orderId, reason);
         Order order = loadOrder(orderId);
         order.releaseInventory(reason);
         orderRepository.save(order);
@@ -246,7 +250,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordPaymentCompleted(OrderId orderId, String transactionId) {
-// Logging removed
+        log.debug("Recording PaymentCompleted for order {}, txId={}", orderId, transactionId);
         Order order = loadOrder(orderId);
         order.completePayment(transactionId, order.getTotalAmount());
         orderRepository.save(order);
@@ -258,7 +262,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordPaymentFailed(OrderId orderId, String reason, boolean retryable) {
-// Logging removed
+        log.warn("Recording PaymentFailed for order {}: {} (retryable={})", orderId, reason, retryable);
         Order order = loadOrder(orderId);
         order.failPayment(reason, retryable);
         orderRepository.save(order);
@@ -270,7 +274,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordRefundCompleted(OrderId orderId, String refundTxId) {
-// Logging removed
+        log.debug("Recording RefundCompleted for order {}, refundTxId={}", orderId, refundTxId);
         Order order = loadOrder(orderId);
         order.completeRefund(refundTxId, order.getTotalAmount());
         orderRepository.save(order);
@@ -281,7 +285,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordShipmentCreated(OrderId orderId, String shipmentId, String trackingNumber, String carrier) {
-// Logging removed
+        log.debug("Recording ShipmentCreated for order {}, shipmentId={}, tracking={}", orderId, shipmentId, trackingNumber);
         Order order = loadOrder(orderId);
         order.createShipment(shipmentId, trackingNumber, carrier);
         orderRepository.save(order);
@@ -292,7 +296,7 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordOrderDelivered(OrderId orderId, String shipmentId) {
-// Logging removed
+        log.debug("Recording OrderDelivered for order {}, shipmentId={}", orderId, shipmentId);
         Order order = loadOrder(orderId);
         // Guard: already delivered (Temporal and Kafka paths may both arrive)
         if (order.getStatus().name().equals("DELIVERED")) {
@@ -308,11 +312,11 @@ public class OrderCommandService implements OrderCommandUseCase {
      */
     @Transactional
     public void recordOrderCancelled(OrderId orderId, String reason, String cancelledBy) {
-// Logging removed
+        log.info("Recording OrderCancelled for order {}, reason={}, by={}", orderId, reason, cancelledBy);
         Order order = loadOrder(orderId);
         // Guard: if already cancelled, skip (idempotency)
         if (order.getStatus().name().equals("CANCELLED")) {
-// Logging removed
+            log.debug("Order {} already CANCELLED — skipping (idempotent)", orderId);
             return;
         }
         order.cancel(reason, cancelledBy);

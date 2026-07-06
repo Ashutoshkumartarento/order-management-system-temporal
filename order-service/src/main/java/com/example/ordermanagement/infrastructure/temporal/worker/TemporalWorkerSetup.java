@@ -68,7 +68,7 @@ public class TemporalWorkerSetup {
 
     @PostConstruct
     public void createWorker() {
-// Logging removed
+        log.info("Registering Temporal worker on task queue: {}", WorkflowPortAdapter.TASK_QUEUE);
 
         Worker worker = workerFactory.newWorker(WorkflowPortAdapter.TASK_QUEUE);
 
@@ -87,6 +87,6 @@ public class TemporalWorkerSetup {
         // Start all workers (begins polling for tasks)
         workerFactory.start();
 
-// Logging removed
+        log.info("Temporal worker started — polling for workflow and activity tasks");
     }
 }

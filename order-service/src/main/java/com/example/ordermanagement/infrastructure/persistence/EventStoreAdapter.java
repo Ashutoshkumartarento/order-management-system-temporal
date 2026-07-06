@@ -5,6 +5,8 @@ import com.example.ordermanagement.domain.exception.OptimisticLockingException;
 import com.example.ordermanagement.domain.port.outbound.EventStore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -62,6 +64,8 @@ import java.util.*;
 @Repository
 public class EventStoreAdapter implements EventStore {
 
+    private static final Logger log = LoggerFactory.getLogger(EventStoreAdapter.class);
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -94,7 +98,7 @@ public class EventStoreAdapter implements EventStore {
                     expectedVersion + " current=" + currentVersion);
         }
 
-// Logging removed
+        log.debug("Appending {} event(s) to aggregate {} (currentVersion={})", events.size(), aggregateId, currentVersion);
 
         for (DomainEvent event : events) {
             try {
@@ -113,7 +117,7 @@ public class EventStoreAdapter implements EventStore {
 
                 jdbcTemplate.update(INSERT_EVENT_SQL, params);
 
-// Logging removed
+                log.debug("Stored event {}: type={}, version={}", event.eventId(), event.eventType(), event.version());
 
             } catch (DuplicateKeyException e) {
                 // Another transaction inserted the same version — optimistic lock violation
@@ -137,7 +141,7 @@ public class EventStoreAdapter implements EventStore {
      */
     @Override
     public List<DomainEvent> loadEvents(String aggregateId, long fromVersion) {
-// Logging removed
+        log.debug("Loading events for aggregate {} from version {}", aggregateId, fromVersion);
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("aggregateId", aggregateId)
@@ -146,7 +150,7 @@ public class EventStoreAdapter implements EventStore {
         List<DomainEvent> events = jdbcTemplate.query(
                 LOAD_EVENTS_SQL, params, this::mapRowToEvent);
 
-// Logging removed
+        log.debug("Loaded {} event(s) for aggregate {}", events.size(), aggregateId);
         return events;
     }
 

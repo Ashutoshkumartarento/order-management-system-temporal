@@ -38,7 +38,7 @@ public class NotificationActivityImpl implements NotificationActivity {
 
     @Override
     public void sendOrderConfirmedNotification(String orderId) {
-// Logging removed
+        log.debug("sendOrderConfirmedNotification: order={} — no-op, OrderEventKafkaPublisher already published", orderId);
         // The OrderConfirmedMessage is already published by OrderEventKafkaPublisher
         // when the OrderConfirmedEvent is persisted. This is a no-op to avoid duplication.
     }
@@ -46,24 +46,24 @@ public class NotificationActivityImpl implements NotificationActivity {
     @Override
     public void sendOrderShippedNotification(String orderId, String trackingNumber) {
         // ShipmentCreatedMessage already published via OrderEventKafkaPublisher
-// Logging removed
+        log.debug("sendOrderShippedNotification: order={} tracking={} — no-op, already published via KafkaPublisher", orderId, trackingNumber);
     }
 
     @Override
     public void sendOrderDeliveredNotification(String orderId) {
         // ShipmentDeliveredMessage already published via OrderEventKafkaPublisher
-// Logging removed
+        log.debug("sendOrderDeliveredNotification: order={} — no-op, already published via KafkaPublisher", orderId);
     }
 
     @Override
     public void sendOrderCancelledNotification(String orderId, String reason) {
         // OrderCancelledMessage already published via OrderEventKafkaPublisher
-// Logging removed
+        log.debug("sendOrderCancelledNotification: order={} reason={} — no-op, already published via KafkaPublisher", orderId, reason);
     }
 
     @Override
     public void sendPaymentFailedNotification(String orderId, String reason) {
         // PaymentFailedMessage already published via OrderEventKafkaPublisher
-// Logging removed
+        log.debug("sendPaymentFailedNotification: order={} reason={} — no-op, already published via KafkaPublisher", orderId, reason);
     }
 }

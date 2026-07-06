@@ -7,6 +7,8 @@ import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowExecutionAlreadyStarted;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.serviceclient.WorkflowServiceStubs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -55,6 +57,8 @@ import java.time.Duration;
 @Component
 public class WorkflowPortAdapter implements WorkflowPort {
 
+    private static final Logger log = LoggerFactory.getLogger(WorkflowPortAdapter.class);
+
     public static final String TASK_QUEUE = "ORDER_FULFILLMENT_QUEUE";
 
     private final WorkflowClient workflowClient;
@@ -68,7 +72,7 @@ public class WorkflowPortAdapter implements WorkflowPort {
 
     @Override
     public String startFulfillmentWorkflow(OrderId orderId, String workflowId) {
-// Logging removed
+        log.info("Starting fulfillment workflow {} for order {}", workflowId, orderId);
 
         WorkflowOptions options = WorkflowOptions.newBuilder()
                 .setWorkflowId(workflowId)
@@ -85,10 +89,10 @@ public class WorkflowPortAdapter implements WorkflowPort {
         try {
             // Start asynchronously — don't wait for workflow to complete
             WorkflowClient.start(workflow::fulfill, orderId.toString(), stepDelayMs);
-// Logging removed
+            log.info("Workflow {} started on task queue {}", workflowId, TASK_QUEUE);
         } catch (WorkflowExecutionAlreadyStarted e) {
             // Idempotency: workflow already running with this ID — that's fine
-// Logging removed
+            log.info("Workflow {} already running — skipping start (idempotent)", workflowId);
         }
 
         return workflowId;
@@ -96,23 +100,23 @@ public class WorkflowPortAdapter implements WorkflowPort {
 
     @Override
     public void sendCancelSignal(String workflowId, String reason) {
-// Logging removed
+        log.info("Sending CancelOrder signal to workflow {}: {}", workflowId, reason);
 
         OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
                 OrderFulfillmentWorkflow.class, workflowId);
 
         try {
             workflow.cancelOrder(reason);
-// Logging removed
+            log.info("CancelOrder signal delivered to workflow {}", workflowId);
         } catch (Exception e) {
             // Workflow may have already completed — log but don't fail
-// Logging removed
+            log.warn("Could not deliver CancelOrder signal to workflow {} (may have already completed): {}", workflowId, e.getMessage());
         }
     }
 
     @Override
     public void sendRetryPaymentSignal(String workflowId) {
-// Logging removed
+        log.info("Sending RetryPayment signal to workflow {}", workflowId);
 
         OrderFulfillmentWorkflow workflow = workflowClient.newWorkflowStub(
                 OrderFulfillmentWorkflow.class, workflowId);
@@ -120,7 +124,7 @@ public class WorkflowPortAdapter implements WorkflowPort {
         try {
             workflow.retryPayment();
         } catch (Exception e) {
-// Logging removed
+            log.warn("Could not deliver RetryPayment signal to workflow {} (may have already completed): {}", workflowId, e.getMessage());
         }
     }
 
@@ -138,7 +142,7 @@ public class WorkflowPortAdapter implements WorkflowPort {
                     progress.retryCount()
             );
         } catch (Exception e) {
-// Logging removed
+            log.debug("Workflow {} not found or completed — returning UNKNOWN status: {}", workflowId, e.getMessage());
             return new WorkflowStatusResult(workflowId, "UNKNOWN", "UNKNOWN", 0);
         }
     }
