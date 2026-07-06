@@ -89,32 +89,32 @@ public class InventoryActivityImpl implements InventoryActivity {
                             .retrieve()
                             .body(InventoryContracts.ReserveInventoryResponse.class));
 
-// Logging removed
+            log.info("Inventory reserved for order {}: reservationId={}", orderId, response.reservationId());
             return new ReservationResult(response.reservationId(), response.message());
 
         } catch (HttpClientErrorException.UnprocessableEntity e) {
             // 422 from inventory-service = not enough stock (non-retryable)
-// Logging removed
+            log.warn("Insufficient stock for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Insufficient stock: " + e.getMessage()));
         } catch (Exception e) {
             // Network errors, 5xx, or circuit open = retryable by Temporal
-// Logging removed
+            log.warn("Inventory service error for order {} (Temporal will retry): {}", orderId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Inventory service unavailable: " + e.getMessage()));
         }
     }
 
     @Override
     public void releaseInventory(String orderId, String reservationId) {
-// Logging removed
+        log.info("Releasing inventory for order {}, reservationId={}", orderId, reservationId);
         try {
             circuitBreaker.executeRunnable(() -> restClientBuilder.build()
                     .delete()
                     .uri(inventoryServiceUrl + "/reserve/{reservationId}", reservationId)
                     .retrieve()
                     .toBodilessEntity());
-// Logging removed
+            log.info("Inventory released for order {}, reservationId={}", orderId, reservationId);
         } catch (Exception e) {
-// Logging removed
+            log.error("Failed to release inventory for order {}, reservationId={}: {}", orderId, reservationId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Failed to release inventory: " + e.getMessage()));
         }
     }
@@ -123,13 +123,13 @@ public class InventoryActivityImpl implements InventoryActivity {
     public void recordInventoryReserved(String orderId, String reservationId) {
         try {
             orderCommandService.recordInventoryReserved(OrderId.of(orderId), reservationId);
-// Logging removed
+            log.debug("InventoryReserved recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("InventoryReserved already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record InventoryReserved for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -138,13 +138,13 @@ public class InventoryActivityImpl implements InventoryActivity {
     public void recordInventoryReservationFailed(String orderId, String reason) {
         try {
             orderCommandService.recordInventoryReservationFailed(OrderId.of(orderId), reason);
-// Logging removed
+            log.debug("InventoryReservationFailed recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("InventoryReservationFailed already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record InventoryReservationFailed for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -153,13 +153,13 @@ public class InventoryActivityImpl implements InventoryActivity {
     public void recordInventoryReleased(String orderId, String reason) {
         try {
             orderCommandService.recordInventoryReleased(OrderId.of(orderId), reason);
-// Logging removed
+            log.debug("InventoryReleased recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("InventoryReleased already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record InventoryReleased for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -168,13 +168,13 @@ public class InventoryActivityImpl implements InventoryActivity {
     public void recordOrderCancelled(String orderId, String reason, String cancelledBy) {
         try {
             orderCommandService.recordOrderCancelled(OrderId.of(orderId), reason, cancelledBy);
-// Logging removed
+            log.debug("OrderCancelled recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("OrderCancelled already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record OrderCancelled for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }

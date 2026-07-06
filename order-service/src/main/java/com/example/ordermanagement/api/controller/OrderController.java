@@ -22,6 +22,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -50,6 +52,8 @@ import java.util.UUID;
         every state change that ever happened.
         """)
 public class OrderController {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderController.class);
 
     private final OrderCommandUseCase commandService;
     private final OrderQueryUseCase queryService;
@@ -80,7 +84,7 @@ public class OrderController {
     public ResponseEntity<Map<String, String>> createOrder(
             @Valid @RequestBody CreateOrderRequest request) {
 
-// Logging removed
+        log.info("POST /orders — customerId={}", request.customerId());
         CreateOrderCommand command = new CreateOrderCommand(
                 OrderId.generate(),
                 CustomerId.of(request.customerId()),
@@ -105,7 +109,7 @@ public class OrderController {
             @Parameter(description = "Order UUID", required = true) @PathVariable UUID orderId,
             @Valid @RequestBody AddItemRequest request) {
 
-// Logging removed
+        log.debug("POST /orders/{}/items — productId={}", orderId, request.productId());
         AddItemCommand command = new AddItemCommand(
                 OrderId.of(orderId),
                 request.productId(),
@@ -157,7 +161,7 @@ public class OrderController {
     public ResponseEntity<Map<String, String>> confirmOrder(
             @Parameter(description = "Order UUID", required = true) @PathVariable UUID orderId) {
 
-// Logging removed
+        log.info("POST /orders/{}/confirm", orderId);
         commandService.confirmOrder(new ConfirmOrderCommand(OrderId.of(orderId)));
         return ResponseEntity.accepted()
                 .body(Map.of(
@@ -188,7 +192,7 @@ public class OrderController {
             @PathVariable UUID orderId,
             @Valid @RequestBody CancelOrderRequest request) {
 
-// Logging removed
+        log.info("POST /orders/{}/cancel — reason={}", orderId, request.reason());
         commandService.cancelOrder(new CancelOrderCommand(OrderId.of(orderId), request.reason()));
         return ResponseEntity.ok().build();
     }
@@ -232,7 +236,7 @@ public class OrderController {
     })
     @PostMapping("/{orderId}/retry-payment")
     public ResponseEntity<Map<String, String>> retryPayment(@PathVariable UUID orderId) {
-// Logging removed
+        log.info("POST /orders/{}/retry-payment", orderId);
         Order order = queryService.getOrder(OrderId.of(orderId));
         if (order.getWorkflowId() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "No active workflow for this order"));
