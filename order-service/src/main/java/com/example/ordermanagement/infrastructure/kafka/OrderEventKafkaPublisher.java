@@ -5,9 +5,12 @@ import com.example.ordermanagement.domain.event.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * OrderEventKafkaPublisher — Outbox Pattern Implementation
@@ -57,18 +60,22 @@ public class OrderEventKafkaPublisher {
 
         log.debug("Publishing {} to Kafka for order {}", domainEvent.eventType(), domainEvent.aggregateId());
 
-        kafkaTemplate.send(TOPIC, domainEvent.aggregateId(), message)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Failed to publish {} to Kafka for order {}: {}",
-                                domainEvent.eventType(), domainEvent.aggregateId(), ex.getMessage());
-                    } else {
-                        log.debug("Published {} to Kafka for order {} [partition={}, offset={}]",
-                                domainEvent.eventType(), domainEvent.aggregateId(),
-                                result.getRecordMetadata().partition(),
-                                result.getRecordMetadata().offset());
-                    }
-                });
+        try {
+            SendResult<String, OrderEventMessage> result =
+                    kafkaTemplate.send(TOPIC, domainEvent.aggregateId(), message)
+                                 .get(10, TimeUnit.SECONDS);
+            log.debug("Published {} to Kafka for order {} [partition={}, offset={}]",
+                    domainEvent.eventType(), domainEvent.aggregateId(),
+                    result.getRecordMetadata().partition(),
+                    result.getRecordMetadata().offset());
+        } catch (Exception e) {
+            // Producer has already exhausted its retries (retries=3 in application.yml).
+            // Log at ERROR so the loss is visible; the AFTER_COMMIT listener cannot roll
+            // back the DB transaction at this point, so this is a known at-most-once gap
+            // (use Debezium CDC for at-least-once production guarantees).
+            log.error("Failed to publish {} to Kafka for order {} after producer retries — event lost",
+                    domainEvent.eventType(), domainEvent.aggregateId(), e);
+        }
     }
 
     private OrderEventMessage toMessage(DomainEvent event) {
