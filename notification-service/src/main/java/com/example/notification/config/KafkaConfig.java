@@ -4,6 +4,7 @@ import com.example.contracts.kafka.OrderEventMessage;
 import com.example.contracts.kafka.PaymentEventMessage;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -19,6 +20,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -59,9 +61,14 @@ public class KafkaConfig {
 
     @Bean
     public ConsumerFactory<String, OrderEventMessage> consumerFactory() {
-        JsonDeserializer<OrderEventMessage> deserializer =
+        JsonDeserializer<OrderEventMessage> jsonDeserializer =
                 new JsonDeserializer<>(OrderEventMessage.class, false);
-        deserializer.addTrustedPackages("com.example.contracts.kafka");
+        jsonDeserializer.addTrustedPackages("com.example.contracts.kafka");
+        // Wrap in ErrorHandlingDeserializer so Kafka-client-level RecordDeserializationException
+        // is caught before the poll loop and surfaced as a Spring DeserializationException
+        // that DefaultErrorHandler can route to the DLT.
+        ErrorHandlingDeserializer<OrderEventMessage> deserializer =
+                new ErrorHandlingDeserializer<>(jsonDeserializer);
 
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -82,13 +89,38 @@ public class KafkaConfig {
         return factory;
     }
 
+    // ── DLQ consumer (raw bytes — no re-routing to another DLT) ──────────
+
+    @Bean
+    public ConsumerFactory<String, byte[]> dlqConsumerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "notification-service-dlq-group");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), new ByteArrayDeserializer());
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]>
+            dlqListenerContainerFactory() {
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, byte[]>();
+        factory.setConsumerFactory(dlqConsumerFactory());
+        // No DLQ error handler — DLQ messages must not recurse into another DLT.
+        // One attempt only: log the failure and move on (offset committed, message skipped).
+        factory.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(0L, 0L)));
+        return factory;
+    }
+
     // ── Payment events consumer ────────────────────────────────────────────
 
     @Bean
     public ConsumerFactory<String, PaymentEventMessage> paymentConsumerFactory() {
-        JsonDeserializer<PaymentEventMessage> deserializer =
+        JsonDeserializer<PaymentEventMessage> jsonDeserializer =
                 new JsonDeserializer<>(PaymentEventMessage.class, false);
-        deserializer.addTrustedPackages("com.example.contracts.kafka");
+        jsonDeserializer.addTrustedPackages("com.example.contracts.kafka");
+        ErrorHandlingDeserializer<PaymentEventMessage> deserializer =
+                new ErrorHandlingDeserializer<>(jsonDeserializer);
 
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
