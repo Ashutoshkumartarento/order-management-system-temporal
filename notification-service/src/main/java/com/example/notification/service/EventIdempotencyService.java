@@ -36,4 +36,14 @@ public class EventIdempotencyService {
                 .setIfAbsent(KEY_PREFIX + eventId, "1", TTL);
         return Boolean.TRUE.equals(inserted);
     }
+
+    /**
+     * Removes the processed mark for an eventId.
+     * Called on processing failure so the next retry attempt is not skipped
+     * by the idempotency check, allowing the container's error handler to
+     * retry and eventually route to the DLQ.
+     */
+    public void deleteOccurrence(UUID eventId) {
+        redisTemplate.delete(KEY_PREFIX + eventId);
+    }
 }

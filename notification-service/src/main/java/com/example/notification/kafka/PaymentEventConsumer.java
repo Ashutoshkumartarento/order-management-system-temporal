@@ -3,6 +3,8 @@ package com.example.notification.kafka;
 import com.example.contracts.kafka.PaymentEventMessage;
 import com.example.notification.service.EventIdempotencyService;
 import com.example.notification.service.NotificationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class PaymentEventConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentEventConsumer.class);
 
     private final NotificationService     notificationService;
     private final EventIdempotencyService idempotencyService;
@@ -46,8 +50,14 @@ public class PaymentEventConsumer {
                     notificationService.notifyPaymentRefunded(m);
             }
         } catch (Exception e) {
-            // Don't rethrow — mark as processed to avoid infinite retry loop
-            // In production: send to DLQ for manual investigation
+            // Revert the idempotency mark so the retry attempt is not skipped.
+            // The container's DefaultErrorHandler will retry (FixedBackOff: 2 retries, 2s apart).
+            // After all retries are exhausted, DeadLetterPublishingRecoverer routes
+            // the message to payment.events.DLT for manual investigation.
+            idempotencyService.deleteOccurrence(message.eventId());
+            log.error("Failed to process {} for event {} — reverting idempotency mark, will retry/DLQ",
+                    message.getClass().getSimpleName(), message.eventId(), e);
+            throw e;
         }
     }
 }
