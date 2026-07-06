@@ -2,6 +2,8 @@ package com.example.ordermanagement.infrastructure.kafka;
 
 import com.example.contracts.kafka.OrderEventMessage;
 import com.example.ordermanagement.domain.event.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -32,6 +34,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class OrderEventKafkaPublisher {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderEventKafkaPublisher.class);
+
     public static final String TOPIC = "order.events";
 
     private final KafkaTemplate<String, OrderEventMessage> kafkaTemplate;
@@ -51,14 +55,18 @@ public class OrderEventKafkaPublisher {
             return; // Not all events need Kafka publication
         }
 
-// Logging removed
+        log.debug("Publishing {} to Kafka for order {}", domainEvent.eventType(), domainEvent.aggregateId());
 
         kafkaTemplate.send(TOPIC, domainEvent.aggregateId(), message)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-// Logging removed
+                        log.error("Failed to publish {} to Kafka for order {}: {}",
+                                domainEvent.eventType(), domainEvent.aggregateId(), ex.getMessage());
                     } else {
-// Logging removed
+                        log.debug("Published {} to Kafka for order {} [partition={}, offset={}]",
+                                domainEvent.eventType(), domainEvent.aggregateId(),
+                                result.getRecordMetadata().partition(),
+                                result.getRecordMetadata().offset());
                     }
                 });
     }

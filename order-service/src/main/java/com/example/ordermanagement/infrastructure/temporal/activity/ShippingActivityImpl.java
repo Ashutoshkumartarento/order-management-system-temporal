@@ -72,27 +72,28 @@ public class ShippingActivityImpl implements ShippingActivity {
                             .retrieve()
                             .body(ShippingContracts.CreateShipmentResponse.class));
 
-// Logging removed
+            log.info("Shipment created for order {}: shipmentId={}, tracking={}, carrier={}",
+                    orderId, response.shipmentId(), response.trackingNumber(), response.carrier());
             return new ShipmentResult(response.shipmentId(), response.trackingNumber(), response.carrier());
 
         } catch (Exception e) {
-// Logging removed
+            log.warn("Shipping service error for order {} (Temporal will retry): {}", orderId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Shipping service error: " + e.getMessage()));
         }
     }
 
     @Override
     public void confirmDelivery(String orderId, String shipmentId) {
-// Logging removed
+        log.info("Confirming delivery for order {}, shipmentId={}", orderId, shipmentId);
         try {
             circuitBreaker.executeRunnable(() -> restClientBuilder.build()
                     .post()
                     .uri(shippingServiceUrl + "/deliveries/{shipmentId}/confirm", shipmentId)
                     .retrieve()
                     .body(ShippingContracts.ConfirmDeliveryResponse.class));
-// Logging removed
+            log.info("Delivery confirmed for order {}, shipmentId={}", orderId, shipmentId);
         } catch (Exception e) {
-// Logging removed
+            log.error("Delivery confirmation failed for order {}, shipmentId={}: {}", orderId, shipmentId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Delivery confirmation failed: " + e.getMessage()));
         }
     }
@@ -102,13 +103,13 @@ public class ShippingActivityImpl implements ShippingActivity {
                                        String trackingNumber, String carrier) {
         try {
             orderCommandService.recordShipmentCreated(OrderId.of(orderId), shipmentId, trackingNumber, carrier);
-// Logging removed
+            log.debug("ShipmentCreated recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("ShipmentCreated already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record ShipmentCreated for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -117,13 +118,13 @@ public class ShippingActivityImpl implements ShippingActivity {
     public void recordShipmentDelivered(String orderId, String shipmentId) {
         try {
             orderCommandService.recordOrderDelivered(OrderId.of(orderId), shipmentId);
-// Logging removed
+            log.debug("ShipmentDelivered recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("ShipmentDelivered already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record ShipmentDelivered for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }

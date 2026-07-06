@@ -88,20 +88,20 @@ public class PaymentActivityImpl implements PaymentActivity {
                             })
                             .body(PaymentContracts.ChargePaymentResponse.class));
 
-// Logging removed
+            log.info("Payment processed for order {}: txId={}", orderId, response.transactionId());
             return new PaymentResult(response.transactionId(), response.message());
 
         } catch (InsufficientFundsException | CardDeclinedException e) {
             throw e;  // Let Temporal's doNotRetry handle these
         } catch (Exception e) {
-// Logging removed
+            log.warn("Payment service error for order {} (Temporal will retry): {}", orderId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Payment service error: " + e.getMessage()));
         }
     }
 
     @Override
     public void refundPayment(String orderId, String transactionId) {
-// Logging removed
+        log.info("Refunding payment for order {}, transactionId={}", orderId, transactionId);
         try {
             circuitBreaker.executeRunnable(() -> restClientBuilder.build()
                     .post()
@@ -109,9 +109,9 @@ public class PaymentActivityImpl implements PaymentActivity {
                     .body(new PaymentContracts.RefundPaymentRequest(orderId, transactionId))
                     .retrieve()
                     .body(PaymentContracts.RefundPaymentResponse.class));
-// Logging removed
+            log.info("Refund completed for order {}, transactionId={}", orderId, transactionId);
         } catch (Exception e) {
-// Logging removed
+            log.error("Refund failed for order {}, transactionId={}: {}", orderId, transactionId, e.getMessage());
             throw Activity.wrap(new RuntimeException("Refund failed: " + e.getMessage()));
         }
     }
@@ -120,13 +120,13 @@ public class PaymentActivityImpl implements PaymentActivity {
     public void recordPaymentCompleted(String orderId, String transactionId) {
         try {
             orderCommandService.recordPaymentCompleted(OrderId.of(orderId), transactionId);
-// Logging removed
+            log.debug("PaymentCompleted recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("PaymentCompleted already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record PaymentCompleted for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -135,13 +135,13 @@ public class PaymentActivityImpl implements PaymentActivity {
     public void recordPaymentFailed(String orderId, String reason, boolean retryable) {
         try {
             orderCommandService.recordPaymentFailed(OrderId.of(orderId), reason, retryable);
-// Logging removed
+            log.debug("PaymentFailed recorded for order {} (retryable={})", orderId, retryable);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("PaymentFailed already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record PaymentFailed for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
@@ -150,13 +150,13 @@ public class PaymentActivityImpl implements PaymentActivity {
     public void recordRefundCompleted(String orderId, String refundTransactionId) {
         try {
             orderCommandService.recordRefundCompleted(OrderId.of(orderId), refundTransactionId);
-// Logging removed
+            log.debug("RefundCompleted recorded for order {}", orderId);
         } catch (DuplicateKeyException | OptimisticLockingException e) {
             // Event already recorded (idempotent)
-// Logging removed
+            log.debug("RefundCompleted already recorded for order {} — skipping (idempotent)", orderId);
         } catch (Exception e) {
             // Real error — rethrow wrapped for Temporal to handle
-// Logging removed
+            log.error("Failed to record RefundCompleted for order {}: {}", orderId, e.getMessage());
             throw Activity.wrap(e);
         }
     }
