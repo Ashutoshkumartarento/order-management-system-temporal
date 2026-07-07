@@ -1,5 +1,6 @@
 package com.example.ordermanagement.infrastructure.temporal.workflow;
 
+import com.example.ordermanagement.infrastructure.temporal.workflow.model.WorkflowDefinition;
 import io.temporal.workflow.QueryMethod;
 import io.temporal.workflow.SignalMethod;
 import io.temporal.workflow.WorkflowInterface;
@@ -69,7 +70,7 @@ public interface OrderFulfillmentWorkflow {
      *                     demos so a cancel signal can arrive before the activity is scheduled.
      */
     @WorkflowMethod
-    void fulfill(String orderId, long stepDelayMs);
+    void fulfill(String orderId, long stepDelayMs, WorkflowDefinition workflowDefinition);
 
     /**
      * Signal: CancelOrder
