@@ -337,7 +337,10 @@ class OrderFulfillmentWorkflowTest {
         OrderFulfillmentWorkflow workflow = client.newWorkflowStub(
                 OrderFulfillmentWorkflow.class, options);
 
-        WorkflowClient.start(workflow::fulfill, orderId, 0L);
+        com.example.ordermanagement.infrastructure.temporal.workflow.YamlWorkflowLoader loader = new com.example.ordermanagement.infrastructure.temporal.workflow.YamlWorkflowLoader();
+        com.example.ordermanagement.infrastructure.temporal.workflow.model.WorkflowDefinition definition = loader.loadWorkflow("workflow-config.yml");
+
+        WorkflowClient.start(workflow::fulfill, orderId, 0L, definition);
         return workflow;
     }
 

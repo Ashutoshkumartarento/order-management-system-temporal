@@ -29,3 +29,10 @@ logging:
 
 server:
   port: 8084
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    try-it-out-enabled: true
+  api-docs:
+    path: /v3/api-docs

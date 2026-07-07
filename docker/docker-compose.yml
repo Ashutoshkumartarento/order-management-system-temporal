@@ -213,6 +213,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SIMULATION_INVENTORY_FAILURE_RATE: "0.20"
+      SPRINGDOC_API_DOCS_ENABLED: "true"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8081:8081"]
     networks: [order-net]
     healthcheck:
@@ -241,6 +243,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SIMULATION_PAYMENT_FAILURE_RATE: "0.00"
       SIMULATION_PAYMENT_TRANSIENT_RATIO: "0.30"
+      SPRINGDOC_API_DOCS_ENABLED: "true"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8082:8082"]
     networks: [order-net]
     healthcheck:
@@ -268,6 +272,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SIMULATION_SHIPPING_FAILURE_RATE: "0.10"
+      SPRINGDOC_API_DOCS_ENABLED: "true"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8083:8083"]
     networks: [order-net]
     healthcheck:
@@ -305,6 +311,8 @@ services:
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: "6379"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      SPRINGDOC_API_DOCS_ENABLED: "true"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8084:8084"]
     networks: [order-net]
     healthcheck:
@@ -344,6 +352,8 @@ services:
       SERVICES_SHIPPING_URL: http://shipping-service:8083
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SIMULATION_STEP_DELAY_MS: 10000   # Set >0 to slow saga steps and test cancel/durable-execution
+      SPRINGDOC_API_DOCS_ENABLED: "true"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8080:8080"]
     networks: [order-net]
     healthcheck:
@@ -479,4 +489,25 @@ services:
     ports:
       - "16686:16686"   # Jaeger UI
       - "4318:4318"     # OTLP HTTP receiver
+    networks: [order-net]
+
+  # Centralized Swagger UI to view and interact with all APIs
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    container_name: swagger-ui
+    environment:
+      API_URLS: "[
+        {url: 'http://localhost:8080/v3/api-docs', name: 'Order Service (Direct)'},
+        {url: 'http://localhost:8081/v3/api-docs', name: 'Inventory Service (Direct)'},
+        {url: 'http://localhost:8082/v3/api-docs', name: 'Payment Service (Direct)'},
+        {url: 'http://localhost:8083/v3/api-docs', name: 'Shipping Service (Direct)'},
+        {url: 'http://localhost:8084/v3/api-docs', name: 'Notification Service (Direct)'},
+        {url: 'http://localhost:8000/order-service/v3/api-docs', name: 'Order Service (Gateway)'},
+        {url: 'http://localhost:8000/inventory-service/v3/api-docs', name: 'Inventory Service (Gateway)'},
+        {url: 'http://localhost:8000/payment-service/v3/api-docs', name: 'Payment Service (Gateway)'},
+        {url: 'http://localhost:8000/shipping-service/v3/api-docs', name: 'Shipping Service (Gateway)'},
+        {url: 'http://localhost:8000/notification-service/v3/api-docs', name: 'Notification Service (Gateway)'}
+      ]"
+    ports:
+      - "8089:8080"
     networks: [order-net]

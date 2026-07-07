@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import com.example.ordermanagement.infrastructure.temporal.workflow.YamlWorkflowLoader;
 
 import java.time.Duration;
 
@@ -88,7 +89,9 @@ public class WorkflowPortAdapter implements WorkflowPort {
 
         try {
             // Start asynchronously — don't wait for workflow to complete
-            WorkflowClient.start(workflow::fulfill, orderId.toString(), stepDelayMs);
+            YamlWorkflowLoader loader = new YamlWorkflowLoader();
+            com.example.ordermanagement.infrastructure.temporal.workflow.model.WorkflowDefinition definition = loader.loadWorkflow("workflow-config.yml");
+            WorkflowClient.start(workflow::fulfill, orderId.toString(), stepDelayMs, definition);
             log.info("Workflow {} started on task queue {}", workflowId, TASK_QUEUE);
         } catch (WorkflowExecutionAlreadyStarted e) {
             // Idempotency: workflow already running with this ID — that's fine
