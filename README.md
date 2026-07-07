@@ -31,10 +31,10 @@ A production-quality learning project demonstrating how enterprise patterns work
 
 ```
 ┌─────────────┐    ┌──────────────────────────────────┐
-│   Browser   │    │         Kong API Gateway          │
-│   / curl    │───▶│  :8000 proxy  :8001 admin         │
-└─────────────┘    │  Plugins: rate-limit, cache,      │
-                   │  correlation-id, prometheus        │
+│   Browser   │    │         Kong API Gateway         │
+│   / curl    │───▶│  :8000 proxy  :8001 admin        │
+└─────────────┘    │  Plugins: rate-limit, cache,     │
+                   │  correlation-id, prometheus      │
                    └──────────────┬───────────────────┘
                                   │ routes
               ┌───────────────────┼──────────────────────┐
@@ -45,11 +45,11 @@ A production-quality learning project demonstrating how enterprise patterns work
               │ gRPC :7233
               ▼
      ┌─────────────────┐         ┌──────────────────┐
-     │  Temporal Server │         │   Apache Kafka   │
-     │  OrderFulfillment│         │  order.events    │
-     │  Workflow (Saga) │         │  payment.events  │
+     │ Temporal Server │         │   Apache Kafka   │
+     │ OrderFulfillment│         │  order.events    │
+     │ Workflow (Saga) │         │  payment.events  │
      └─────────────────┘         │  shipping.events │
-                                  └──────────────────┘
+                                 └──────────────────┘
 ```
 
 **Current state of the repository:** Monolith (single Spring Boot app). The microservices architecture is designed (HLD + LLD diagrams exist) and ready for implementation. The domain, workflow, and event sourcing layers are already structured for the split.
