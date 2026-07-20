@@ -14,8 +14,8 @@ volumes:
   postgres-payment-data:
   postgres-shipping-data:
   postgres-kong-data:
+  pgadmin-data:
   kafka-data:
-  zookeeper-data:
   prometheus-data:
   grafana-data:
 
@@ -105,42 +105,53 @@ services:
       timeout: 5s
       retries: 10
 
-  # ──────────────────────────────────────────────
-  # KAFKA + ZOOKEEPER
-  # ──────────────────────────────────────────────
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-    container_name: zookeeper
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports: ["2181:2181"]
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports: ["5050:80"]
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpass:/pgpassfile:ro
     networks: [order-net]
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+    depends_on:
+      - postgres-order
+      - postgres-inventory
+      - postgres-payment
+      - postgres-shipping
+      - postgres-temporal
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # KAFKA (KRaft mode — no ZooKeeper)
+  # ──────────────────────────────────────────────
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     container_name: kafka
-    depends_on:
-      zookeeper:
-        condition: service_healthy
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: _VP7EnuhQy61x9YlacLvnA
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     ports: ["9092:9092"]
     networks: [order-net]
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list"]
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -154,7 +165,6 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     ports: ["9000:8080"]
     networks: [order-net]
 
@@ -212,7 +222,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: inventorypass
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-      SIMULATION_INVENTORY_FAILURE_RATE: "0.20"
+      SIMULATION_INVENTORY_FAILURE_RATE: "0.10"
       SPRINGDOC_API_DOCS_ENABLED: "true"
       SPRINGDOC_SWAGGER_UI_ENABLED: "true"
     ports: ["8081:8081"]
@@ -414,10 +424,13 @@ services:
       KONG_PG_DATABASE: kongdb
       KONG_PROXY_LISTEN: 0.0.0.0:8000
       KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002
+      KONG_ADMIN_GUI_URL: http://localhost:8002
       KONG_PLUGINS: bundled
     ports:
       - "8000:8000"   # Kong proxy — client entry point
       - "8001:8001"   # Kong Admin API
+      - "8002:8002"   # Kong Manager UI
     networks: [order-net]
     healthcheck:
       test: ["CMD", "kong", "health"]
@@ -425,18 +438,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-
-  konga:
-    image: pantsel/konga:latest
-    container_name: konga
-    depends_on:
-      kong:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      DB_ADAPTER: sails-disk
-    ports: ["1337:1337"]
-    networks: [order-net]
 
   kong-init:
     image: curlimages/curl:8.7.1
