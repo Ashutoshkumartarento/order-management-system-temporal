@@ -60,13 +60,11 @@ public class OrderEventConsumer {
                 case OrderEventMessage.ShipmentDeliveredMessage m ->
                     notificationService.notifyShipmentDelivered(m);
 
-                case OrderEventMessage.InventoryReservedMessage m -> {
-                    // no notification needed
-                }
-
-                case OrderEventMessage.InventoryReleasedMessage m -> {
-                    // no notification needed
-                }
+                case OrderEventMessage.InventoryReservedMessage m -> {}
+                case OrderEventMessage.InventoryReleasedMessage m -> {}
+                case OrderEventMessage.ItemAddedMessage m -> {}
+                case OrderEventMessage.ItemRemovedMessage m -> {}
+                case OrderEventMessage.RefundCompletedMessage m -> {}
             }
         } catch (Exception e) {
             // Revert the idempotency mark so the retry attempt is not skipped.
