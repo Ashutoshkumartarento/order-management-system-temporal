@@ -31,6 +31,9 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = OrderEventMessage.ShipmentDeliveredMessage.class,    name = "ShipmentDelivered"),
     @JsonSubTypes.Type(value = OrderEventMessage.InventoryReservedMessage.class,    name = "InventoryReserved"),
     @JsonSubTypes.Type(value = OrderEventMessage.InventoryReleasedMessage.class,    name = "InventoryReleased"),
+    @JsonSubTypes.Type(value = OrderEventMessage.ItemAddedMessage.class,            name = "ItemAdded"),
+    @JsonSubTypes.Type(value = OrderEventMessage.ItemRemovedMessage.class,          name = "ItemRemoved"),
+    @JsonSubTypes.Type(value = OrderEventMessage.RefundCompletedMessage.class,      name = "RefundCompleted"),
 })
 public sealed interface OrderEventMessage permits
         OrderEventMessage.OrderCreatedMessage,
@@ -41,7 +44,10 @@ public sealed interface OrderEventMessage permits
         OrderEventMessage.ShipmentCreatedMessage,
         OrderEventMessage.ShipmentDeliveredMessage,
         OrderEventMessage.InventoryReservedMessage,
-        OrderEventMessage.InventoryReleasedMessage {
+        OrderEventMessage.InventoryReleasedMessage,
+        OrderEventMessage.ItemAddedMessage,
+        OrderEventMessage.ItemRemovedMessage,
+        OrderEventMessage.RefundCompletedMessage {
 
     UUID eventId();
     String orderId();
@@ -81,5 +87,14 @@ public sealed interface OrderEventMessage permits
 
     record InventoryReleasedMessage(UUID eventId, String orderId, String reservationId,
                                     String reason, Instant occurredAt)
+            implements OrderEventMessage {}
+
+    record ItemAddedMessage(UUID eventId, String orderId, Instant occurredAt)
+            implements OrderEventMessage {}
+
+    record ItemRemovedMessage(UUID eventId, String orderId, Instant occurredAt)
+            implements OrderEventMessage {}
+
+    record RefundCompletedMessage(UUID eventId, String orderId, Instant occurredAt)
             implements OrderEventMessage {}
 }

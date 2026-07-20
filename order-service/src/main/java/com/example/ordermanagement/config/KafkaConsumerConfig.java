@@ -1,5 +1,6 @@
 package com.example.ordermanagement.config;
 
+import com.example.contracts.kafka.OrderEventMessage;
 import com.example.contracts.kafka.ShippingEventMessage;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -15,6 +16,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -67,6 +69,33 @@ public class KafkaConsumerConfig {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, ShippingEventMessage>();
         factory.setConsumerFactory(shippingConsumerFactory());
         factory.setConcurrency(3);
+        factory.setCommonErrorHandler(shippingDlqErrorHandler());
+        return factory;
+    }
+
+    // ── Projection consumer — reads order.events to rebuild order_summary ──
+
+    @Bean
+    public ConsumerFactory<String, OrderEventMessage> projectionConsumerFactory() {
+        JsonDeserializer<OrderEventMessage> jsonDeserializer =
+                new JsonDeserializer<>(OrderEventMessage.class, false);
+        jsonDeserializer.addTrustedPackages("com.example.contracts.kafka");
+        ErrorHandlingDeserializer<OrderEventMessage> deserializer =
+                new ErrorHandlingDeserializer<>(jsonDeserializer);
+
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "order-projection-group");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deserializer);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, OrderEventMessage>
+            projectionListenerContainerFactory() {
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, OrderEventMessage>();
+        factory.setConsumerFactory(projectionConsumerFactory());
         factory.setCommonErrorHandler(shippingDlqErrorHandler());
         return factory;
     }

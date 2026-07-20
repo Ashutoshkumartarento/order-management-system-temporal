@@ -113,11 +113,16 @@ public class OrderEventKafkaPublisher {
             case InventoryReleasedEvent e -> new OrderEventMessage.InventoryReleasedMessage(
                     e.eventId(), e.aggregateId(), e.reservationId(), e.reason(), e.occurredAt());
 
-            // These events are internal domain detail — no external Kafka message needed
-            case ItemAddedEvent ignored -> null;
-            case ItemRemovedEvent ignored -> null;
+            case ItemAddedEvent e -> new OrderEventMessage.ItemAddedMessage(
+                    e.eventId(), e.aggregateId(), e.occurredAt());
+
+            case ItemRemovedEvent e -> new OrderEventMessage.ItemRemovedMessage(
+                    e.eventId(), e.aggregateId(), e.occurredAt());
+
+            case RefundCompletedEvent e -> new OrderEventMessage.RefundCompletedMessage(
+                    e.eventId(), e.aggregateId(), e.occurredAt());
+
             case InventoryReservationFailedEvent ignored -> null;
-            case RefundCompletedEvent ignored -> null;
         };
     }
 }
