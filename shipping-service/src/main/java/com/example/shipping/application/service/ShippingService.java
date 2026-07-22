@@ -4,8 +4,13 @@ import com.example.contracts.api.ShippingContracts;
 import com.example.contracts.kafka.ShippingEventMessage;
 import com.example.shipping.domain.model.Delivery;
 import com.example.shipping.domain.model.Shipment;
+import com.example.shipping.infrastructure.outbox.OutboxEntry;
+import com.example.shipping.infrastructure.outbox.OutboxFlushSignal;
+import com.example.shipping.infrastructure.outbox.OutboxRepository;
 import com.example.shipping.infrastructure.persistence.DeliveryRepository;
 import com.example.shipping.infrastructure.persistence.ShipmentRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -18,8 +23,10 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class ShippingService {
 
-    private final ShipmentRepository   shipmentRepository;
-    private final DeliveryRepository   deliveryRepository;
+    private final ShipmentRepository  shipmentRepository;
+    private final DeliveryRepository  deliveryRepository;
+    private final OutboxRepository    outboxRepository;
+    private final ObjectMapper        objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${simulation.shipping-failure-rate:0.0}")
@@ -27,9 +34,13 @@ public class ShippingService {
 
     public ShippingService(ShipmentRepository shipmentRepository,
                            DeliveryRepository deliveryRepository,
+                           OutboxRepository outboxRepository,
+                           ObjectMapper objectMapper,
                            ApplicationEventPublisher eventPublisher) {
         this.shipmentRepository = shipmentRepository;
         this.deliveryRepository = deliveryRepository;
+        this.outboxRepository   = outboxRepository;
+        this.objectMapper       = objectMapper;
         this.eventPublisher     = eventPublisher;
     }
 
@@ -37,7 +48,6 @@ public class ShippingService {
     public ShippingContracts.CreateShipmentResponse createShipment(
             ShippingContracts.CreateShipmentRequest request) {
 
-        // Idempotency: return existing shipment if already created for this order
         var existing = shipmentRepository.findByOrderId(request.orderId());
         if (existing.isPresent()) {
             Shipment s = existing.get();
@@ -56,9 +66,10 @@ public class ShippingService {
         Shipment shipment = Shipment.create(request.orderId(), tracking, carrier);
         shipmentRepository.save(shipment);
 
-        eventPublisher.publishEvent(new ShippingEventMessage.ShipmentCreatedMessage(
+        writeOutbox(new ShippingEventMessage.ShipmentCreatedMessage(
                 UUID.randomUUID(), request.orderId(),
-                shipment.shipmentId(), tracking, carrier, Instant.now()));
+                shipment.shipmentId(), tracking, carrier, Instant.now()),
+                "ShipmentCreated", "shipping.events");
 
         return new ShippingContracts.CreateShipmentResponse(
                 shipment.shipmentId(), tracking, carrier, "CREATED");
@@ -76,21 +87,33 @@ public class ShippingService {
         Shipment shipment = shipmentRepository.findById(shipmentId)
                 .orElseThrow(() -> new RuntimeException("Shipment not found: " + shipmentId));
 
-        // Idempotency: already confirmed
         var existing = deliveryRepository.findByShipmentId(shipmentId);
         if (existing.isPresent()) {
             return new ShippingContracts.ConfirmDeliveryResponse(shipmentId, "DELIVERED");
         }
 
-        // Mark shipment as delivered and persist both records atomically
         Shipment delivered = shipment.markDelivered();
         shipmentRepository.save(delivered);
         deliveryRepository.save(Delivery.create(shipmentId, shipment.orderId()));
 
-        eventPublisher.publishEvent(new ShippingEventMessage.ShipmentDeliveredMessage(
+        writeOutbox(new ShippingEventMessage.ShipmentDeliveredMessage(
                 UUID.randomUUID(), shipment.orderId(),
-                shipmentId, Instant.now(), Instant.now()));
+                shipmentId, Instant.now(), Instant.now()),
+                "ShipmentDelivered", "shipping.events");
 
         return new ShippingContracts.ConfirmDeliveryResponse(shipmentId, "DELIVERED");
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+
+    private void writeOutbox(ShippingEventMessage message, String eventType, String topic) {
+        try {
+            String payload = objectMapper.writeValueAsString(message);
+            outboxRepository.save(OutboxEntry.create(message.eventId(), message.orderId(),
+                    eventType, topic, payload));
+            eventPublisher.publishEvent(new OutboxFlushSignal());
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize outbox event", e);
+        }
     }
 }

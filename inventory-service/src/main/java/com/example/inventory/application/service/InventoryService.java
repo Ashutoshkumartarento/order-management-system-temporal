@@ -5,6 +5,9 @@ import com.example.contracts.kafka.InventoryEventMessage;
 import com.example.inventory.domain.model.InsufficientStockException;
 import com.example.inventory.domain.model.InventoryItem;
 import com.example.inventory.domain.model.Reservation;
+import com.example.inventory.infrastructure.outbox.OutboxEntry;
+import com.example.inventory.infrastructure.outbox.OutboxFlushSignal;
+import com.example.inventory.infrastructure.outbox.OutboxRepository;
 import com.example.inventory.infrastructure.persistence.InventoryItemRepository;
 import com.example.inventory.infrastructure.persistence.ReservationRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -25,9 +28,10 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class InventoryService {
 
-    private final ReservationRepository    reservationRepository;
-    private final InventoryItemRepository  inventoryItemRepository;
-    private final ObjectMapper             objectMapper;
+    private final ReservationRepository   reservationRepository;
+    private final InventoryItemRepository inventoryItemRepository;
+    private final OutboxRepository        outboxRepository;
+    private final ObjectMapper            objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${simulation.inventory-failure-rate:0.0}")
@@ -35,10 +39,12 @@ public class InventoryService {
 
     public InventoryService(ReservationRepository reservationRepository,
                             InventoryItemRepository inventoryItemRepository,
+                            OutboxRepository outboxRepository,
                             ObjectMapper objectMapper,
                             ApplicationEventPublisher eventPublisher) {
         this.reservationRepository   = reservationRepository;
         this.inventoryItemRepository = inventoryItemRepository;
+        this.outboxRepository        = outboxRepository;
         this.objectMapper            = objectMapper;
         this.eventPublisher          = eventPublisher;
     }
@@ -47,7 +53,6 @@ public class InventoryService {
     public InventoryContracts.ReserveInventoryResponse reserve(
             InventoryContracts.ReserveInventoryRequest request) {
 
-        // Idempotency: already reserved for this order
         return reservationRepository.findByOrderId(request.orderId())
                 .map(existing -> new InventoryContracts.ReserveInventoryResponse(
                         existing.reservationId(), "RESERVED", "Already reserved (idempotent)"))
@@ -57,7 +62,6 @@ public class InventoryService {
                     List<InventoryContracts.ReserveInventoryRequest.LineItem> items =
                             request.items() != null ? request.items() : List.of();
 
-                    // Check and decrement stock for each requested product
                     for (var lineItem : items) {
                         InventoryItem item = inventoryItemRepository
                                 .findById(lineItem.productId().toString())
@@ -70,9 +74,10 @@ public class InventoryService {
                     Reservation reservation = Reservation.create(request.orderId(), itemsJson);
                     reservationRepository.save(reservation);
 
-                    eventPublisher.publishEvent(new InventoryEventMessage.InventoryReservedMessage(
+                    writeOutbox(new InventoryEventMessage.InventoryReservedMessage(
                             UUID.randomUUID(), request.orderId(),
-                            reservation.reservationId(), Instant.now()));
+                            reservation.reservationId(), Instant.now()),
+                            "InventoryReserved", "inventory.events");
 
                     return new InventoryContracts.ReserveInventoryResponse(
                             reservation.reservationId(), "RESERVED", "Inventory reserved successfully");
@@ -82,7 +87,6 @@ public class InventoryService {
     @Transactional
     public InventoryContracts.ReleaseInventoryResponse release(String reservationId) {
         reservationRepository.findById(reservationId).ifPresent(reservation -> {
-            // Restore stock for each item that was originally reserved
             List<LineItemRecord> items = deserializeItems(reservation.itemsJson());
             for (var lineItem : items) {
                 inventoryItemRepository.findById(lineItem.productId())
@@ -90,9 +94,10 @@ public class InventoryService {
             }
             reservationRepository.save(reservation.release());
 
-            eventPublisher.publishEvent(new InventoryEventMessage.InventoryReleasedMessage(
+            writeOutbox(new InventoryEventMessage.InventoryReleasedMessage(
                     UUID.randomUUID(), reservation.orderId(),
-                    reservationId, "Saga compensation", Instant.now()));
+                    reservationId, "Saga compensation", Instant.now()),
+                    "InventoryReleased", "inventory.events");
         });
 
         return new InventoryContracts.ReleaseInventoryResponse(reservationId, "RELEASED");
@@ -139,6 +144,17 @@ public class InventoryService {
 
     // ───────────────────────────────────────────────────────────────────
 
+    private void writeOutbox(InventoryEventMessage message, String eventType, String topic) {
+        try {
+            String payload = objectMapper.writeValueAsString(message);
+            outboxRepository.save(OutboxEntry.create(message.eventId(), message.orderId(),
+                    eventType, topic, payload));
+            eventPublisher.publishEvent(new OutboxFlushSignal());
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize outbox event", e);
+        }
+    }
+
     private void simulateFailure(String orderId) {
         if (ThreadLocalRandom.current().nextDouble() < failureRate) {
             throw new RuntimeException(
@@ -146,8 +162,7 @@ public class InventoryService {
         }
     }
 
-    private String serializeItems(
-            List<InventoryContracts.ReserveInventoryRequest.LineItem> items) {
+    private String serializeItems(List<InventoryContracts.ReserveInventoryRequest.LineItem> items) {
         try {
             List<LineItemRecord> records = items.stream()
                     .map(li -> new LineItemRecord(li.productId().toString(), li.quantity()))
