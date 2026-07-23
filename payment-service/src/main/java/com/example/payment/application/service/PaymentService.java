@@ -4,8 +4,13 @@ import com.example.contracts.api.PaymentContracts;
 import com.example.contracts.kafka.PaymentEventMessage;
 import com.example.payment.domain.model.Refund;
 import com.example.payment.domain.model.Transaction;
+import com.example.payment.infrastructure.outbox.OutboxEntry;
+import com.example.payment.infrastructure.outbox.OutboxFlushSignal;
+import com.example.payment.infrastructure.outbox.OutboxRepository;
 import com.example.payment.infrastructure.persistence.RefundRepository;
 import com.example.payment.infrastructure.persistence.TransactionRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -18,8 +23,10 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class PaymentService {
 
-    private final TransactionRepository    transactionRepository;
-    private final RefundRepository         refundRepository;
+    private final TransactionRepository  transactionRepository;
+    private final RefundRepository       refundRepository;
+    private final OutboxRepository       outboxRepository;
+    private final ObjectMapper           objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${simulation.payment-failure-rate:0.0}")
@@ -30,9 +37,13 @@ public class PaymentService {
 
     public PaymentService(TransactionRepository transactionRepository,
                           RefundRepository refundRepository,
+                          OutboxRepository outboxRepository,
+                          ObjectMapper objectMapper,
                           ApplicationEventPublisher eventPublisher) {
         this.transactionRepository = transactionRepository;
         this.refundRepository      = refundRepository;
+        this.outboxRepository      = outboxRepository;
+        this.objectMapper          = objectMapper;
         this.eventPublisher        = eventPublisher;
     }
 
@@ -40,7 +51,6 @@ public class PaymentService {
     public PaymentContracts.ChargePaymentResponse charge(
             PaymentContracts.ChargePaymentRequest request) {
 
-        // Idempotency: return existing charge if already processed for this order
         var existing = transactionRepository.findFirstByOrderIdAndTypeOrderByCreatedAtDesc(
                 request.orderId(), "CHARGE");
         if (existing.isPresent()) {
@@ -63,9 +73,10 @@ public class PaymentService {
                 request.orderId(), request.amount(), request.currency());
         transactionRepository.save(transaction);
 
-        eventPublisher.publishEvent(new PaymentEventMessage.PaymentChargedMessage(
+        writeOutbox(new PaymentEventMessage.PaymentChargedMessage(
                 UUID.randomUUID(), request.orderId(),
-                transaction.transactionId(), request.amount(), request.currency(), Instant.now()));
+                transaction.transactionId(), request.amount(), request.currency(), Instant.now()),
+                "PaymentCharged", "payment.events");
 
         return new PaymentContracts.ChargePaymentResponse(
                 transaction.transactionId(), "CHARGED", "Payment successful");
@@ -75,7 +86,6 @@ public class PaymentService {
     public PaymentContracts.RefundPaymentResponse refund(
             PaymentContracts.RefundPaymentRequest request) {
 
-        // Idempotency: return existing refund if this charge was already refunded
         var existing = refundRepository.findByOriginalTransactionId(request.transactionId());
         if (existing.isPresent()) {
             return new PaymentContracts.RefundPaymentResponse(
@@ -93,12 +103,26 @@ public class PaymentService {
                 original.currency());
         refundRepository.save(refund);
 
-        eventPublisher.publishEvent(new PaymentEventMessage.PaymentRefundedMessage(
+        writeOutbox(new PaymentEventMessage.PaymentRefundedMessage(
                 UUID.randomUUID(), request.orderId(),
                 request.transactionId(), refund.refundId(),
-                original.amount(), Instant.now()));
+                original.amount(), Instant.now()),
+                "PaymentRefunded", "payment.events");
 
         return new PaymentContracts.RefundPaymentResponse(refund.refundId(), "REFUNDED");
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+
+    private void writeOutbox(PaymentEventMessage message, String eventType, String topic) {
+        try {
+            String payload = objectMapper.writeValueAsString(message);
+            outboxRepository.save(OutboxEntry.create(message.eventId(), message.orderId(),
+                    eventType, topic, payload));
+            eventPublisher.publishEvent(new OutboxFlushSignal());
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize outbox event", e);
+        }
     }
 
     public static class InsufficientFundsException extends RuntimeException {
